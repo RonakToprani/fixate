@@ -219,9 +219,21 @@ async function pollActive() {
 function renderActive(view) {
   const msLeft = Math.max(0, (view.endsAt || 0) - Date.now());
   el("timer").textContent = fmtClock(msLeft);
-  const pct = Math.round(view.focusPct ?? 100);
-  el("focusPct").textContent = pct + "%";
-  el("focusPct").style.color = pct >= 90 ? "var(--good)" : pct >= 70 ? "var(--warn)" : "var(--danger)";
+
+  // Focus %: don't show a confident number until detection has actually accumulated
+  // some evaluated time. Before that, "…" is honest — a flat 100% out of the gate was
+  // the misleading symptom when the detection loop wasn't even running.
+  const warming = (view.evaluatedMs ?? 0) < 1500;
+  if (warming) {
+    el("focusPct").textContent = view.faceOk ? "…" : "no face";
+    el("focusPct").style.color = "var(--muted)";
+    el("focusPct").style.fontSize = view.faceOk ? "" : "18px";
+  } else {
+    const pct = Math.round(view.focusPct ?? 100);
+    el("focusPct").textContent = pct + "%";
+    el("focusPct").style.fontSize = "";
+    el("focusPct").style.color = pct >= 90 ? "var(--good)" : pct >= 70 ? "var(--warn)" : "var(--danger)";
+  }
   el("cGaze").textContent = view.gazeCount ?? 0;
   el("cChrome").textContent = view.chromeLossCount ?? 0;
   el("cBlocked").textContent = view.blockedCount ?? 0;

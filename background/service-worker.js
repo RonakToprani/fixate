@@ -272,6 +272,8 @@ async function buildView() {
     weakCalib: st.weakCalib,
     focusPct: st.liveStats?.focusPct ?? 100,
     gazeCount: st.liveStats?.gazeCount ?? 0,
+    evaluatedMs: st.liveStats?.evaluatedMs ?? 0,
+    faceOk: st.liveStats?.faceOk ?? false,
     chromeLossCount: st.chromeLossEvents.length,
     blockedCount: st.blockedAttempts.length,
     blockedAttempts: st.blockedAttempts,

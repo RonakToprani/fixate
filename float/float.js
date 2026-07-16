@@ -34,9 +34,15 @@ function render(view) {
   el("endBtn").hidden = false;
   const msLeft = Math.max(0, (view.endsAt || 0) - Date.now());
   el("timer").textContent = fmtClock(msLeft);
-  const pct = Math.round(view.focusPct ?? 100);
-  el("focusPct").textContent = pct + "%";
-  el("focusPct").style.color = pct >= 90 ? "var(--good)" : pct >= 70 ? "var(--warn)" : "var(--danger)";
+  const warming = (view.evaluatedMs ?? 0) < 1500;
+  if (warming) {
+    el("focusPct").textContent = view.faceOk ? "…" : "no face";
+    el("focusPct").style.color = "var(--muted)";
+  } else {
+    const pct = Math.round(view.focusPct ?? 100);
+    el("focusPct").textContent = pct + "%";
+    el("focusPct").style.color = pct >= 90 ? "var(--good)" : pct >= 70 ? "var(--warn)" : "var(--danger)";
+  }
   el("cGaze").textContent = view.gazeCount ?? 0;
   el("cChrome").textContent = view.chromeLossCount ?? 0;
   el("cBlocked").textContent = view.blockedCount ?? 0;

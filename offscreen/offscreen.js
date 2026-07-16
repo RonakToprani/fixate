@@ -21,10 +21,11 @@ const S = {
   stream: null,
   running: false,
   soundOn: true,
-  raf: 0,
+  loopTimer: 0,
   frameTimer: 0,
   liveTimer: 0,
   catchVariant: 0,
+  faceOk: false, // is the model currently seeing a face? (for the dashboard's honesty)
 
   // focus accounting (time-based; unknown/blink frames excluded)
   focusedMs: 0,
@@ -55,7 +56,9 @@ async function start({ baseline, soundOn }) {
     await cam.play();
 
     S.tracker = new GazeTracker();
-    await S.tracker.init();
+    // CPU delegate: this document is never painted, so a GPU/WebGL context may not
+    // initialize here and detection would silently produce nothing.
+    await S.tracker.init({ delegate: "CPU" });
     // Reuse the baseline captured during the centered calibration step.
     S.tracker.baseline = baseline;
 
@@ -63,8 +66,11 @@ async function start({ baseline, soundOn }) {
     S.lastEvalTs = performance.now();
     send({ type: "OFX_READY" });
 
-    loop();
-    S.frameTimer = setInterval(pushFrame, 160); // ~6fps preview to the dashboard
+    // IMPORTANT: drive the detection loop with a timer, NOT requestAnimationFrame.
+    // An offscreen document is never rendered, so its rAF callbacks never fire — that's
+    // what froze focus at a default 100% before. Timers keep running in the background.
+    S.loopTimer = setInterval(loopOnce, 40); // ~25fps target (throttled in bg = fewer, still works)
+    S.frameTimer = setInterval(pushFrame, 160);
     S.liveTimer = setInterval(pushLive, 1000);
     pushFrame();
     pushLive();
@@ -73,22 +79,36 @@ async function start({ baseline, soundOn }) {
   }
 }
 
-function loop() {
+function loopOnce() {
   if (!S.running) return;
+  if (cam.readyState < 2) return; // wait until the video actually has frame data
   const now = performance.now();
-  const r = S.tracker.process(cam, now);
+  let r;
+  try {
+    r = S.tracker.process(cam, now);
+  } catch (_) {
+    return; // a transient decode hiccup shouldn't kill the loop
+  }
   accountFocus(r, now);
-  if (r.justCaught) onDrift();
-  S.raf = requestAnimationFrame(loop);
+  if (r && r.justCaught) onDrift();
 }
 
 function accountFocus(r, now) {
   const dt = now - S.lastEvalTs;
   S.lastEvalTs = now;
-  if (!r || r.state === "skip" || r.state === "unknown") return;
-  if (dt <= 0 || dt > 500) return;
-  S.evaluatedMs += dt;
-  if (r.state === "focused") S.focusedMs += dt;
+  if (!r || r.state === "skip") return;
+
+  // Track whether the model can currently see a face (for the dashboard's honesty).
+  if (r.state === "focused" || r.state === "drifting" || r.reason === "blink") S.faceOk = true;
+  else if (r.reason === "no-face") S.faceOk = false;
+
+  if (r.state === "unknown") return;
+  if (dt <= 0) return;
+  // Clamp the per-frame contribution instead of dropping large gaps: background timer
+  // throttling can space frames out, and dropping them would keep evaluatedMs at 0
+  // (the old bug's second half). Clamping still credits time without over-counting a stall.
+  S.evaluatedMs += Math.min(dt, 500);
+  if (r.state === "focused") S.focusedMs += Math.min(dt, 500);
 }
 
 function currentFocusPct() {
@@ -117,7 +137,7 @@ function pushFrame() {
     fctx.scale(-1, 1);
     fctx.drawImage(cam, -frameCanvas.width, 0, frameCanvas.width, frameCanvas.height);
     fctx.restore();
-    const frame = frameCanvas.toDataURL("image/jpeg", 0.5);
+    const frame = frameCanvas.toDataURL("image/jpeg", 0.8);
     send({ type: "OFX_FRAME", frame });
   } catch (_) {}
 }
@@ -130,6 +150,7 @@ function pushLive() {
       focusPct: Math.round(currentFocusPct()),
       evaluatedMs: S.evaluatedMs,
       gazeCount: S.gazeDriftEvents.length,
+      faceOk: S.faceOk,
     },
   });
 }
@@ -144,7 +165,7 @@ function stop() {
     focusPct: Math.round(currentFocusPct()),
   };
   S.running = false;
-  cancelAnimationFrame(S.raf);
+  clearInterval(S.loopTimer);
   clearInterval(S.frameTimer);
   clearInterval(S.liveTimer);
   try {
