@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="session.css" />
     <title>Fixate — session</title>
+    <!-- classic script: runs before the deferred module so it can surface any
+         startup/import error onto the load screen instead of freezing silently -->
+    <script src="boot-guard.js"></script>
   </head>
   <body>
     <!-- hidden capture element; MediaPipe reads frames from it -->

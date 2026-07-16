@@ -491,4 +491,4 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
-boot();
+boot().catch(showLoadError);
