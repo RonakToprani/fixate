@@ -16,7 +16,7 @@ import {
   DEFAULT_BLOCKLIST,
   fmtHrs,
 } from "../lib/storage.js";
-import { attributionCallout } from "../lib/copy.js";
+import { attributionCallout, GAZE_CATCH_LINES, CHROME_LOSS_LINES, rotatingLine } from "../lib/copy.js";
 import { renderShareCard, downloadCard } from "../lib/sharecard.js";
 import { GazeTracker, TUNING } from "../lib/gaze.js";
 
@@ -274,6 +274,8 @@ let previewStream = null;
 async function startActive(view, reuse = false) {
   show("viewActive");
   active.settings = settings;
+  active.lastGaze = null;
+  active.lastChrome = null;
   el("weakNote").hidden = !view.weakCalib;
   wireActive();
   renderActive(view);
@@ -355,10 +357,30 @@ function renderActive(view) {
     el("focusPct").title = "";
     el("focusPct").style.color = pct >= 90 ? "var(--good)" : pct >= 70 ? "var(--warn)" : "var(--danger)";
   }
-  el("cGaze").textContent = view.gazeCount ?? 0;
-  el("cChrome").textContent = view.chromeLossCount ?? 0;
+  // Flash the dashboard when a new catch lands, so it's visibly confirmed even with the
+  // dropdown open (the big on-page flash/confetti only draw on real website tabs).
+  const g = view.gazeCount ?? 0, c = view.chromeLossCount ?? 0;
+  if (active.lastGaze != null && g > active.lastGaze) camFlash(rotatingLine(GAZE_CATCH_LINES, g));
+  else if (active.lastChrome != null && c > active.lastChrome) camFlash(rotatingLine(CHROME_LOSS_LINES, c));
+  active.lastGaze = g;
+  active.lastChrome = c;
+
+  el("cGaze").textContent = g;
+  el("cChrome").textContent = c;
   el("cBlocked").textContent = view.blockedCount ?? 0;
   // preview is a live local <video> now — nothing to poll for it here.
+}
+
+function camFlash(line) {
+  const f = el("camFlash");
+  el("camFlashLine").textContent = line;
+  f.hidden = false;
+  clearTimeout(active._flashT);
+  // restart the animation
+  f.style.animation = "none";
+  void f.offsetWidth;
+  f.style.animation = "";
+  active._flashT = setTimeout(() => { f.hidden = true; }, 1100);
 }
 
 function wireActive() {

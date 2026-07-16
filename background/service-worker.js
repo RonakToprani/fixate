@@ -125,14 +125,26 @@ async function installRules(blocklist) {
 // a tiny self-contained effect into whatever page the user is currently looking at.
 // These run in the PAGE context: they must be fully self-contained (no outer references).
 
+function injectable(tab) {
+  return tab && tab.id && /^https?:\/\//.test(tab.url || "");
+}
+
 async function injectIntoActiveTab(func, args = []) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    // Can't script chrome://, the Web Store, PDF viewer, extension pages, etc.
-    if (!tab || !tab.id || !/^https?:\/\//.test(tab.url || "")) return;
+    // Prefer the focused tab; if it's a restricted page (chrome://, New Tab, Web Store,
+    // extension page — none of which allow injection), fall back to the most recently
+    // active real website tab so the effect still lands somewhere the user can see it.
+    let [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!injectable(tab)) {
+      const candidates = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+      candidates.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+      tab = candidates.find((t) => t.active) || candidates[0];
+    }
+    if (!injectable(tab)) return { ok: false, reason: "no-web-tab" };
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
-  } catch (_) {
-    // page refused injection (CSP, restricted) — silently skip; sound/notif still fired
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e) };
   }
 }
 

@@ -99,8 +99,9 @@ function accountFocus(r, now) {
   if (!r || r.state === "skip") return;
 
   // Track whether the model can currently see a face (for the dashboard's honesty).
-  if (r.state === "focused" || r.state === "drifting" || r.reason === "blink") S.faceOk = true;
-  else if (r.reason === "no-face") S.faceOk = false;
+  // Check the reason first: a no-face frame can now be reported as "drifting".
+  if (r.reason === "no-face") S.faceOk = false;
+  else if (r.state === "focused" || r.state === "drifting" || r.reason === "blink") S.faceOk = true;
 
   if (r.state === "unknown") return;
   if (dt <= 0) return;
