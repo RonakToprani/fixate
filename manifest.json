@@ -24,6 +24,8 @@
   "permissions": [
     "storage",
     "tabs",
+    "offscreen",
+    "notifications",
     "declarativeNetRequest",
     "declarativeNetRequestFeedback",
     "alarms"

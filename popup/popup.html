@@ -5,35 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="popup.css" />
     <title>Fixate</title>
+    <script src="../lib/boot-guard.js"></script>
   </head>
   <body>
     <header class="hdr">
-      <div class="brand">
-        <span class="logo">◉</span>
-        <span class="name">FIXATE</span>
-      </div>
+      <div class="brand"><span class="logo">◉</span><span class="name">FIXATE</span></div>
       <button id="historyBtn" class="ghost" title="History &amp; stats">stats</button>
     </header>
 
-    <section class="portfolio" id="portfolio">
-      <div class="stat">
-        <div class="stat-num" id="pfVerified">—</div>
-        <div class="stat-lbl">verified</div>
+    <!-- ============ IDLE: configure & start ============ -->
+    <section id="viewIdle" class="view" hidden>
+      <div class="portfolio">
+        <div class="stat"><div class="stat-num" id="pfVerified">—</div><div class="stat-lbl">verified</div></div>
+        <div class="stat"><div class="stat-num" id="pfStreak">—</div><div class="stat-lbl">clean streak</div></div>
+        <div class="stat"><div class="stat-num" id="pfBest">—</div><div class="stat-lbl">best focus</div></div>
       </div>
-      <div class="stat">
-        <div class="stat-num" id="pfStreak">—</div>
-        <div class="stat-lbl">clean streak</div>
-      </div>
-      <div class="stat">
-        <div class="stat-num" id="pfBest">—</div>
-        <div class="stat-lbl">best focus</div>
-      </div>
-    </section>
+      <p class="insight" id="insight" hidden></p>
 
-    <p class="insight" id="insight" hidden></p>
-
-    <section class="block">
-      <div class="row">
+      <div class="block">
         <label class="lbl">Session length</label>
         <div class="dur">
           <button class="dur-btn" data-min="15">15</button>
@@ -42,45 +31,103 @@
           <input id="durCustom" type="number" min="1" max="240" placeholder="min" />
         </div>
       </div>
-    </section>
 
-    <section class="block">
-      <div class="row between">
-        <label class="lbl">Block during session</label>
-        <span class="hint" id="blockCount"></span>
+      <div class="block">
+        <div class="row between">
+          <label class="lbl">Block during session</label>
+          <span class="hint" id="blockCount"></span>
+        </div>
+        <ul class="sites" id="sites"></ul>
+        <form id="addForm" class="add">
+          <input id="addInput" type="text" placeholder="add a site (e.g. news.com)" />
+          <button type="submit" class="add-btn">+</button>
+        </form>
       </div>
-      <ul class="sites" id="sites"></ul>
-      <form id="addForm" class="add">
-        <input id="addInput" type="text" placeholder="add a site (e.g. news.com)" />
-        <button type="submit" class="add-btn">+</button>
-      </form>
-    </section>
 
-    <section class="block settings">
-      <label class="toggle">
-        <input type="checkbox" id="setSound" />
-        <span>Sound cues</span>
-      </label>
-      <label class="toggle">
-        <input type="checkbox" id="setHold" />
-        <span>Friction to quit early</span>
-      </label>
-      <div class="sub" id="cancelStyleRow">
-        <label class="mini">
-          <input type="radio" name="cancelStyle" value="hold" /> press &amp; hold
-        </label>
-        <label class="mini">
-          <input type="radio" name="cancelStyle" value="reason" /> type a reason
-        </label>
+      <div class="block settings">
+        <label class="toggle"><input type="checkbox" id="setSound" /><span>Sound cues</span></label>
+        <label class="toggle"><input type="checkbox" id="setHold" /><span>Friction to quit early</span></label>
+        <div class="sub" id="cancelStyleRow">
+          <label class="mini"><input type="radio" name="cancelStyle" value="hold" /> press &amp; hold</label>
+          <label class="mini"><input type="radio" name="cancelStyle" value="reason" /> type a reason</label>
+        </div>
+        <label class="toggle"><input type="checkbox" id="setDebug" /><span>Gaze debug (in calibration)</span></label>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="setDebug" />
-        <span>Gaze debug overlay</span>
-      </label>
+
+      <button id="startBtn" class="start">Start focus session</button>
+      <p class="foot">
+        Runs in the background — no tab to keep open. Your camera is used locally to verify
+        focus; nothing is recorded or leaves your machine.
+      </p>
     </section>
 
-    <button id="startBtn" class="start">Start focus session</button>
-    <p class="foot">Fixate uses your camera locally to verify focus. Nothing leaves your machine.</p>
+    <!-- ============ ACTIVE: live dashboard ============ -->
+    <section id="viewActive" class="view" hidden>
+      <div class="hud">
+        <div>
+          <div class="timer" id="timer">25:00</div>
+          <div class="muted small">focus session</div>
+        </div>
+        <div class="focus-wrap">
+          <div class="focus-pct" id="focusPct">100%</div>
+          <div class="muted small">focused</div>
+        </div>
+      </div>
+
+      <div class="preview-wrap">
+        <img id="preview" alt="live camera" />
+        <div class="preview-tag">what Fixate sees</div>
+        <div id="noPreview" class="no-preview">warming up…</div>
+      </div>
+      <p id="weakNote" class="weak-note" hidden>Calibration was a little weak — detection may be less precise.</p>
+
+      <div class="counters">
+        <div class="counter"><span id="cGaze">0</span><label>gaze drifts</label></div>
+        <div class="counter"><span id="cChrome">0</span><label>left Chrome</label></div>
+        <div class="counter"><span id="cBlocked">0</span><label>blocked</label></div>
+      </div>
+
+      <p class="honesty muted small">
+        Runs in the background — you can close this. Fixate can tell when you look away or
+        leave Chrome, but not what you switched to. Drifts reach you as a notification + sound.
+      </p>
+
+      <div class="active-actions">
+        <button id="popoutBtn" class="btn ghost">Pop out ⤢</button>
+        <button id="endBtn" class="btn danger">End session</button>
+      </div>
+    </section>
+
+    <!-- ============ END: report ============ -->
+    <section id="viewEnd" class="view center" hidden>
+      <h2 id="endTitle">Session complete</h2>
+      <div class="end-focus" id="endFocus">100%</div>
+      <div class="muted" id="endDur">25m locked in</div>
+      <p class="callout" id="endCallout"></p>
+      <canvas id="shareCanvas" class="share-canvas"></canvas>
+      <div class="end-actions">
+        <button id="downloadBtn" class="btn">Download card</button>
+        <button id="againBtn" class="btn ghost">New session</button>
+        <button id="statsBtn2" class="btn ghost">Stats</button>
+      </div>
+    </section>
+
+    <!-- friction modal -->
+    <div id="cancelModal" class="modal" hidden>
+      <div class="modal-box">
+        <h3>Leaving already?</h3>
+        <div id="holdVariant">
+          <p class="muted small">Press and hold to end early.</p>
+          <button id="holdBtn" class="hold-btn"><span class="hold-fill" id="holdFill"></span><span class="hold-label">Hold to end</span></button>
+        </div>
+        <div id="reasonVariant" hidden>
+          <p class="muted small">Why stop early? You'll see this later — no judgment.</p>
+          <textarea id="reasonInput" rows="2" placeholder="be honest…"></textarea>
+          <button id="reasonSubmit" class="btn danger">End session</button>
+        </div>
+        <button id="cancelDismiss" class="btn ghost">Keep going</button>
+      </div>
+    </div>
 
     <script type="module" src="popup.js"></script>
   </body>

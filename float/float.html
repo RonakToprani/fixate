@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="float.css" />
+    <title>Fixate</title>
+    <script src="../lib/boot-guard.js"></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="fhdr">
+        <div class="brand"><span class="logo">◉</span> FIXATE</div>
+        <div class="timer" id="timer">--:--</div>
+      </header>
+
+      <div class="preview-wrap">
+        <img id="preview" alt="live camera" />
+        <div id="noPreview" class="no-preview">warming up…</div>
+        <div class="focus-badge" id="focusPct">100%</div>
+      </div>
+
+      <div class="counters">
+        <div class="counter"><span id="cGaze">0</span><label>drifts</label></div>
+        <div class="counter"><span id="cChrome">0</span><label>left Chrome</label></div>
+        <div class="counter"><span id="cBlocked">0</span><label>blocked</label></div>
+      </div>
+
+      <p id="idleMsg" class="idle-msg" hidden>No active session. You can close this window.</p>
+
+      <button id="endBtn" class="btn danger">End session</button>
+    </div>
+
+    <!-- friction modal -->
+    <div id="cancelModal" class="modal" hidden>
+      <div class="modal-box">
+        <h3>Leaving already?</h3>
+        <div id="holdVariant">
+          <p class="muted small">Press and hold to end early.</p>
+          <button id="holdBtn" class="hold-btn"><span class="hold-fill" id="holdFill"></span><span class="hold-label">Hold to end</span></button>
+        </div>
+        <div id="reasonVariant" hidden>
+          <p class="muted small">Why stop early? No judgment.</p>
+          <textarea id="reasonInput" rows="2" placeholder="be honest…"></textarea>
+          <button id="reasonSubmit" class="btn danger">End session</button>
+        </div>
+        <button id="cancelDismiss" class="btn ghost">Keep going</button>
+      </div>
+    </div>
+
+    <script type="module" src="float.js"></script>
+  </body>
+</html>
