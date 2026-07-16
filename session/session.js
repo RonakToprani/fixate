@@ -10,13 +10,13 @@ import {
   getSettings,
   saveSession,
   getPortfolio,
+  fmtHrs,
 } from "../lib/storage.js";
 import {
   GAZE_CATCH_LINES,
   CHROME_LOSS_LINES,
   rotatingLine,
   attributionCallout,
-  fmtHrs,
 } from "../lib/copy.js";
 import {
   playGazeCatch,
