@@ -26,6 +26,7 @@
     "tabs",
     "offscreen",
     "notifications",
+    "scripting",
     "declarativeNetRequest",
     "declarativeNetRequestFeedback",
     "alarms"

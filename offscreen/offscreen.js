@@ -5,16 +5,15 @@
 //
 // It receives a calibrated baseline from the calibration window (which owns the
 // "look at the dot" step), runs the per-frame gaze loop, plays the catch sound locally,
-// pushes a small preview frame + live stats to the service worker for the dashboard,
-// and reports every drift. It knows nothing about site blocking or Chrome-focus loss —
-// those stay in the service worker. See background/service-worker.js.
+// pushes live stats (focus %, face-seen) to the service worker, and reports every drift.
+// The camera PREVIEW is not produced here — the dashboard/float open their own live
+// <video>. It knows nothing about site blocking or Chrome-focus loss — those stay in the
+// service worker. See background/service-worker.js.
 
 import { GazeTracker } from "../lib/gaze.js";
 import { playGazeCatch } from "../lib/sound.js";
 
 const cam = document.getElementById("cam");
-const frameCanvas = document.getElementById("frameCanvas");
-const fctx = frameCanvas.getContext("2d");
 
 const S = {
   tracker: null,
@@ -22,7 +21,6 @@ const S = {
   running: false,
   soundOn: true,
   loopTimer: 0,
-  frameTimer: 0,
   liveTimer: 0,
   catchVariant: 0,
   faceOk: false, // is the model currently seeing a face? (for the dashboard's honesty)
@@ -69,10 +67,12 @@ async function start({ baseline, soundOn }) {
     // IMPORTANT: drive the detection loop with a timer, NOT requestAnimationFrame.
     // An offscreen document is never rendered, so its rAF callbacks never fire — that's
     // what froze focus at a default 100% before. Timers keep running in the background.
-    S.loopTimer = setInterval(loopOnce, 40); // ~25fps target (throttled in bg = fewer, still works)
-    S.frameTimer = setInterval(pushFrame, 160);
-    S.liveTimer = setInterval(pushLive, 1000);
-    pushFrame();
+    // 10fps is plenty for gaze/drift and keeps CPU-delegate inference from pegging a core
+    // (which is what made the whole UI laggy at 25fps).
+    S.loopTimer = setInterval(loopOnce, 100);
+    S.liveTimer = setInterval(pushLive, 700);
+    // Note: no JPEG preview stream anymore. The dashboard/float show a live local <video>
+    // from their own camera track — smooth and real-time instead of a polled image.
     pushLive();
   } catch (e) {
     send({ type: "OFX_ERROR", message: e?.name === "NotAllowedError" ? "camera-denied" : String(e?.message || e) });
@@ -127,21 +127,6 @@ function onDrift() {
   send({ type: "OFX_CATCH", category: "gaze", t, total: S.gazeDriftEvents.length });
 }
 
-// Push a tiny JPEG of what the camera sees so the dashboard can show a live preview
-// without opening its own camera (avoids double-open issues and keeps one source of truth).
-function pushFrame() {
-  if (!S.running || cam.readyState < 2) return;
-  try {
-    // mirror horizontally so the preview reads like a mirror
-    fctx.save();
-    fctx.scale(-1, 1);
-    fctx.drawImage(cam, -frameCanvas.width, 0, frameCanvas.width, frameCanvas.height);
-    fctx.restore();
-    const frame = frameCanvas.toDataURL("image/jpeg", 0.8);
-    send({ type: "OFX_FRAME", frame });
-  } catch (_) {}
-}
-
 function pushLive() {
   if (!S.running) return;
   send({
@@ -166,7 +151,6 @@ function stop() {
   };
   S.running = false;
   clearInterval(S.loopTimer);
-  clearInterval(S.frameTimer);
   clearInterval(S.liveTimer);
   try {
     S.tracker?.close();

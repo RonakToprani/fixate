@@ -9,9 +9,8 @@
 // MV3 workers are ephemeral, so durable session state lives in chrome.storage.session
 // (cleared when the browser closes — exactly right for "the current session"), and the
 // windows.onFocusChanged listener is registered at top level so it survives respawns.
-// The one exception is the live preview frame: it's kept in a module variable because it's
-// large and churny; the offscreen document re-pushes it every ~160ms, so if the worker is
-// respawned it simply repopulates within a frame.
+// The camera preview is NOT relayed through here — the popup/float each open their own
+// live <video> stream (smooth, real-time); the offscreen doc only does detection.
 
 import { saveSession, getPortfolio } from "../lib/storage.js";
 import {
@@ -25,7 +24,6 @@ const FOCUS_LOSS_MS = 5000;
 const GAZE_NOTIFY_THROTTLE_MS = 18000; // don't fire a drift toast more than ~once / 18s
 const ICON = "icons/icon128.png";
 
-let latestFrame = null; // preview JPEG dataURL, re-pushed constantly by the offscreen doc
 
 // ---- session state (chrome.storage.session) ---------------------------------
 
@@ -40,7 +38,7 @@ async function getState() {
   const s = await sget([
     "active", "phase", "startedAt", "endsAt", "durationMin",
     "awaySince", "blockedAttempts", "chromeLossEvents",
-    "liveStats", "lastGazeNotifyAt", "calibWindowId", "weakCalib",
+    "liveStats", "lastGazeNotifyAt", "weakCalib",
   ]);
   return {
     active: !!s.active,
@@ -53,7 +51,6 @@ async function getState() {
     chromeLossEvents: s.chromeLossEvents || [],
     liveStats: s.liveStats || null,
     lastGazeNotifyAt: s.lastGazeNotifyAt || 0,
-    calibWindowId: s.calibWindowId ?? null,
     weakCalib: !!s.weakCalib,
   };
 }
@@ -123,6 +120,100 @@ async function installRules(blocklist) {
   return rules.length;
 }
 
+// ---- on-screen effects (injected into the active tab) ------------------------
+// When a session runs in the background there's no tab of ours to draw on, so we inject
+// a tiny self-contained effect into whatever page the user is currently looking at.
+// These run in the PAGE context: they must be fully self-contained (no outer references).
+
+async function injectIntoActiveTab(func, args = []) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    // Can't script chrome://, the Web Store, PDF viewer, extension pages, etc.
+    if (!tab || !tab.id || !/^https?:\/\//.test(tab.url || "")) return;
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
+  } catch (_) {
+    // page refused injection (CSP, restricted) — silently skip; sound/notif still fired
+  }
+}
+
+// Subtle red edge-vignette that pulses once and fades. Not a full-screen blocker.
+function fxRedFlash(line) {
+  const ID = "__fixate_flash__";
+  document.getElementById(ID)?.remove();
+  const el = document.createElement("div");
+  el.id = ID;
+  el.style.cssText = [
+    "position:fixed", "inset:0", "z-index:2147483647", "pointer-events:none",
+    "box-shadow:inset 0 0 140px 30px rgba(255,60,90,0.55)",
+    "opacity:0", "transition:opacity .18s ease",
+  ].join(";");
+  if (line) {
+    const tag = document.createElement("div");
+    tag.textContent = line;
+    tag.style.cssText = [
+      "position:absolute", "top:22px", "left:50%", "transform:translateX(-50%)",
+      "background:rgba(15,16,32,.86)", "color:#fff", "font:800 15px -apple-system,Segoe UI,Roboto,sans-serif",
+      "padding:9px 16px", "border-radius:999px", "border:1px solid rgba(255,90,110,.6)",
+      "box-shadow:0 8px 24px rgba(0,0,0,.4)",
+    ].join(";");
+    el.appendChild(tag);
+  }
+  document.documentElement.appendChild(el);
+  requestAnimationFrame(() => (el.style.opacity = "1"));
+  setTimeout(() => (el.style.opacity = "0"), 650);
+  setTimeout(() => el.remove(), 950);
+}
+
+// Full-screen confetti burst, self-contained canvas animation, ~2.6s then removes itself.
+function fxConfetti() {
+  const ID = "__fixate_confetti__";
+  document.getElementById(ID)?.remove();
+  const cv = document.createElement("canvas");
+  cv.id = ID;
+  cv.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none";
+  cv.width = innerWidth;
+  cv.height = innerHeight;
+  document.documentElement.appendChild(cv);
+  const ctx = cv.getContext("2d");
+  const colors = ["#8f86ff", "#6c63ff", "#57d6a0", "#ffb457", "#ff6b7d", "#ffffff"];
+  const N = 160;
+  const P = [];
+  for (let i = 0; i < N; i++) {
+    P.push({
+      x: cv.width / 2 + (Math.random() - 0.5) * cv.width * 0.5,
+      y: cv.height * 0.28 + (Math.random() - 0.5) * 80,
+      vx: (Math.random() - 0.5) * 14,
+      vy: Math.random() * -12 - 4,
+      w: 6 + Math.random() * 8,
+      h: 8 + Math.random() * 10,
+      rot: Math.random() * Math.PI,
+      vr: (Math.random() - 0.5) * 0.5,
+      c: colors[(Math.random() * colors.length) | 0],
+    });
+  }
+  const t0 = performance.now();
+  (function frame(now) {
+    const life = now - t0;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const p of P) {
+      p.vy += 0.4; // gravity
+      p.vx *= 0.99;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.max(0, 1 - life / 2600);
+      ctx.fillStyle = p.c;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    if (life < 2600) requestAnimationFrame(frame);
+    else cv.remove();
+  })(t0);
+}
+
 // ---- notifications -----------------------------------------------------------
 
 function notify(id, title, message, priority = 0) {
@@ -140,26 +231,10 @@ function notify(id, title, message, priority = 0) {
 
 // ---- session lifecycle -------------------------------------------------------
 
-async function startCalibration(config) {
-  // Abort any half-open prior calibration window.
-  const prev = await getState();
-  if (prev.calibWindowId != null) {
-    try { await chrome.windows.remove(prev.calibWindowId); } catch (_) {}
-  }
-  await sset({ pendingConfig: config, phase: "calibrating" });
-
-  const win = await chrome.windows.create({
-    url: chrome.runtime.getURL("calib/calib.html"),
-    type: "popup",
-    width: 300,
-    height: 320,
-    focused: true,
-  });
-  await sset({ calibWindowId: win.id });
-}
-
-async function onCalibrated(baseline, weak) {
-  const cfg = (await sget("pendingConfig")).pendingConfig || {};
+// Calibration now happens INSIDE the dropdown (popup owns the "look at the dot" step and
+// the camera+model for it), then the popup hands us the finished baseline via BEGIN_SESSION.
+// No separate window, no openPopup timing games — the dashboard is already on screen.
+async function startRun(cfg, baseline, weak) {
   const startedAt = Date.now();
   const durationMin = cfg.durationMin || 25;
   const endsAt = startedAt + durationMin * 60000;
@@ -176,7 +251,6 @@ async function onCalibrated(baseline, weak) {
     chromeLossEvents: [],
     liveStats: { focusPct: 100, gazeCount: 0 },
     weakCalib: !!weak,
-    calibWindowId: null,
   });
 
   // Persist the start params BEFORE creating the offscreen doc so it can self-start on load
@@ -188,16 +262,6 @@ async function onCalibrated(baseline, weak) {
   // End-of-session alarm. Alarms survive worker respawns; the popup/float compute the
   // live countdown themselves from endsAt.
   chrome.alarms.create("sessionEnd", { when: endsAt });
-}
-
-async function onCalibFailed(message) {
-  await sset({ phase: "idle", active: false, calibWindowId: null });
-  await chrome.storage.session.remove("pendingConfig");
-  if (message === "camera-denied") {
-    notify("fx-cam", "Fixate needs the camera", "Focus can't be verified without it. Nothing is recorded or uploaded.", 2);
-  } else {
-    notify("fx-calib", "Calibration didn't take", "Check your lighting and try starting again.", 1);
-  }
 }
 
 async function endSession(completed, reason) {
@@ -218,11 +282,12 @@ async function endSession(completed, reason) {
   try { await chrome.alarms.clear("sessionEnd"); } catch (_) {}
   await sset({ active: false, phase: "idle", awaySince: 0 });
   await chrome.storage.session.remove("ofxStart");
-  latestFrame = null;
 
   if (completed) {
     const pct = saved.record.focusPct;
-    notify("fx-done", "Session complete", `${pct}% focused · ${saved.record.actualMin}m verified.`, 2);
+    notify("fx-done", "Session complete 🎉", `${pct}% focused · ${saved.record.actualMin}m verified.`, 2);
+    injectIntoActiveTab(fxConfetti); // confetti over whatever they're looking at
+    try { await chrome.action.openPopup(); } catch (_) {} // surface the report too
   }
   return saved;
 }
@@ -277,7 +342,6 @@ async function buildView() {
     chromeLossCount: st.chromeLossEvents.length,
     blockedCount: st.blockedAttempts.length,
     blockedAttempts: st.blockedAttempts,
-    frame: latestFrame,
   };
 }
 
@@ -314,8 +378,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     switch (msg?.type) {
       // ---- from popup / float ----
-      case "START_SESSION":
-        await startCalibration(msg.config || {});
+      case "BEGIN_SESSION":
+        // Popup finished in-dropdown calibration and handed us the baseline.
+        await startRun(msg.config || {}, msg.baseline, msg.weak);
         sendResponse({ ok: true });
         break;
       case "END_SESSION": {
@@ -344,36 +409,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
-      case "CANCEL_CALIB": {
-        const st = await getState();
-        if (st.calibWindowId != null) {
-          try { await chrome.windows.remove(st.calibWindowId); } catch (_) {}
-        }
-        await onCalibFailed("cancelled");
-        sendResponse({ ok: true });
-        break;
-      }
-
-      // ---- from calibration window ----
-      case "CALIB_DONE":
-        await onCalibrated(msg.baseline, msg.weak);
-        sendResponse({ ok: true });
-        break;
-      case "CALIB_FAILED":
-        await onCalibFailed(msg.message);
-        sendResponse({ ok: true });
-        break;
-
       // ---- from offscreen document ----
       case "OFX_LOADED":
         sendResponse({ ok: true });
         break;
       case "OFX_READY":
         sendResponse({ ok: true });
-        break;
-      case "OFX_FRAME":
-        latestFrame = msg.frame;
-        sendResponse?.({ ok: true });
         break;
       case "OFX_LIVE":
         await sset({ liveStats: msg.stats });
@@ -383,10 +424,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // gaze drift caught in the background; toast it (throttled — the sound already fired).
         const st = await getState();
         await sset({ liveStats: { ...(st.liveStats || {}), gazeCount: msg.total } });
+        const line = seededLine(GAZE_CATCH_LINES, msg.t);
+        // Subtle red alert across whatever page they're on right now.
+        injectIntoActiveTab(fxRedFlash, [line]);
         const now = Date.now();
         if (now - st.lastGazeNotifyAt > GAZE_NOTIFY_THROTTLE_MS) {
           await sset({ lastGazeNotifyAt: now });
-          notify("fx-gaze-" + msg.total, "Fixate", seededLine(GAZE_CATCH_LINES, msg.t), 1);
+          notify("fx-gaze-" + msg.total, "Fixate", line, 1);
         }
         sendResponse?.({ ok: true });
         break;
@@ -398,7 +442,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try { await chrome.alarms.clear("sessionEnd"); } catch (_) {}
         await sset({ active: false, phase: "idle" });
         await chrome.storage.session.remove("ofxStart");
-        latestFrame = null;
         notify(
           "fx-ofx-err",
           "Fixate stopped",

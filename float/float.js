@@ -12,12 +12,37 @@ let ended = false;
 let pollTimer = 0;
 let resetHold = null;
 
+let previewStream = null;
+
 async function init() {
   settings = await getSettings();
   wire();
+  openPreview();
   poll();
-  pollTimer = setInterval(poll, 400);
+  pollTimer = setInterval(poll, 500);
 }
+
+async function openPreview() {
+  try {
+    previewStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 400 }, facingMode: "user" },
+      audio: false,
+    });
+    const v = el("preview");
+    v.srcObject = previewStream;
+    v.onplaying = () => { el("noPreview").hidden = true; };
+    await v.play().catch(() => {});
+  } catch (_) {
+    el("noPreview").textContent = "preview unavailable";
+    el("noPreview").hidden = false;
+  }
+}
+function stopPreview() {
+  if (previewStream) { for (const t of previewStream.getTracks()) t.stop(); previewStream = null; }
+  const v = el("preview");
+  if (v) v.srcObject = null;
+}
+window.addEventListener("pagehide", stopPreview);
 
 async function poll() {
   const res = await sw({ type: "GET_VIEW" }).catch(() => null);
@@ -46,12 +71,7 @@ function render(view) {
   el("cGaze").textContent = view.gazeCount ?? 0;
   el("cChrome").textContent = view.chromeLossCount ?? 0;
   el("cBlocked").textContent = view.blockedCount ?? 0;
-  if (view.frame) {
-    el("preview").src = view.frame;
-    el("noPreview").hidden = true;
-  } else {
-    el("noPreview").hidden = false;
-  }
+  // preview is a live local <video> — no polled frame to swap in.
 }
 
 function showIdle() {
@@ -119,6 +139,7 @@ async function end(reason) {
   if (ended) return;
   ended = true;
   clearInterval(pollTimer);
+  stopPreview();
   closeCancelModal();
   await sw({ type: "END_SESSION", reason }).catch(() => {});
   el("idleMsg").textContent = "Session ended — open the Fixate dropdown for your report.";
