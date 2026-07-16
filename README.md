@@ -28,11 +28,18 @@ machine — there's no backend.
   verified hours / clean streaks / bests, surfaces one pattern insight ("you drift most in the
   first few minutes"), and exports a 30-day stats summary.
 
+- **Runs in the background — no tab to keep open.** You start and calibrate from the toolbar
+  dropdown; the session itself runs in a hidden background document. Reopen the dropdown anytime
+  for a live dashboard (timer, focus %, counters, and a preview of what the camera sees), or
+  **pop out a tiny floating window**. Drifts reach you as a desktop notification + sound while
+  you work.
+
 ### Honest about its limits
 
 Fixate can tell when you look away from the screen or leave Chrome. It **cannot** see *what*
-you switched to, and it **cannot** stop you closing the lid or quitting Chrome. The UI says so
-plainly — that honesty is the point.
+you switched to, and it **cannot** stop you closing the lid or quitting Chrome. And while a
+session is running the **webcam stays on in the background** (that's the cost of verifying
+focus without a visible window). The UI says all of this plainly — that honesty is the point.
 
 ---
 
@@ -43,49 +50,67 @@ plainly — that honesty is the point.
 3. Click **Load unpacked** and select this folder (`fixate/`).
 4. Pin the extension and click it to configure and start a session.
 
-The first session will ask for camera permission (used locally, never uploaded).
+Starting a session opens a small centered **calibration window** ("look at the dot", ~5s) and
+asks for camera permission (used locally, never uploaded). After that it runs in the background
+— you can close everything and keep working.
 
 ## Project layout
 
 ```
 manifest.json              MV3 manifest
 background/
-  service-worker.js        DNR site-blocking, windows.onFocusChanged, session coordination
-popup/                     configure blocklist / length / settings, launch a session
-session/                   the session tab: camera, calibration, gaze loop, end report
+  service-worker.js        session coordinator: offscreen lifecycle, DNR blocking,
+                           windows.onFocusChanged, timer (alarms), notifications, saved record
+offscreen/                 invisible background document — owns the camera + gaze detection
+calib/                     centered "look at the dot" calibration window (captures baseline)
+popup/                     the dropdown: configure + start (idle), live dashboard (active), report (end)
+float/                     optional tiny floating window mirroring the live dashboard
 blocked/                   the redirect landing page for blocked sites
 history/                   verified history, portfolio, insight, export
 lib/
   gaze.js                  GazeTracker: calibration + baseline drift + head pose + hysteresis
   storage.js               sessions, portfolio, settings, insight, export (chrome.storage.local)
   copy.js                  all personality/roast copy + attribution formatting
-  sound.js                 synthesized Web Audio cues (no audio files)
+  sound.js                 synthesized Web Audio cues (rotating, playful; no audio files)
   sharecard.js             canvas share card
+  boot-guard.js            classic script: surfaces any page's startup error instead of freezing
 vendor/mediapipe/          bundled MediaPipe Tasks Vision (wasm + FaceLandmarker model)
 icons/                     generated target-mark icons
 ```
 
 ## Architecture notes
 
-- **Who owns what.** The **session tab** owns the camera, gaze detection, the timer, and the
-  final saved record. The **service worker** owns things only it can see — network blocking and
-  OS-level Chrome focus. At session end the tab asks the worker for its counts and merges them.
-- **Ephemeral service worker.** No durable state lives in worker module variables. Active-session
-  state is kept in `chrome.storage.session`, and `windows.onFocusChanged` is registered at the top
-  level so it survives worker respawns.
-- **Messaging.** `SESSION_START` / `SESSION_END` / `SESSION_STATE` between tab and worker;
-  `LIVE_CATCH` from worker → tab for Chrome-loss and blocked-site events; `LIVE_STATS` tab →
-  worker so the blocked page can show the live timer and focus %; `BLOCKED_HIT` from the blocked
-  page → worker to count attempts.
+- **Why a background document.** A popup is destroyed the instant you click away, and a service
+  worker has no DOM/camera — so neither can watch your gaze while you work. The detection lives in
+  a Chrome **offscreen document** (reasons `USER_MEDIA` + `AUDIO_PLAYBACK`): a hidden page the
+  extension keeps alive for the session. It owns the camera, runs the gaze loop, plays the catch
+  sound, and pushes a small preview frame + live stats out for the dashboards.
+- **Who owns what.** The **offscreen doc** does detection. The **service worker** coordinates
+  everything durable: it starts/stops the offscreen doc, runs the timer (`chrome.alarms`), blocks
+  sites (`declarativeNetRequest`), watches OS focus (`windows.onFocusChanged`), fires notifications,
+  and assembles + saves the final record. The **popup/float** are thin views that read a live
+  `view` from the worker and send commands; they can be closed without stopping anything. The
+  **calibration window** owns the "look at the dot" baseline capture, then hands off.
+- **Ephemeral service worker.** No durable state lives in worker module variables (except the churny
+  preview frame, which the offscreen doc re-pushes ~6×/s). Session state is in `chrome.storage.session`,
+  and `windows.onFocusChanged` / `alarms.onAlarm` are registered at top level so they survive respawns.
+- **Messaging.** `START_SESSION` → worker opens the calibration window; `CALIB_DONE {baseline}` →
+  worker spins up the offscreen doc and arms blocking + timer; `OFX_START` / `OFX_STOP` drive the
+  detector (stop returns the final tally); `OFX_FRAME` / `OFX_LIVE` / `OFX_CATCH` flow from detector
+  → worker; `GET_VIEW` gives popup/float/blocked the live snapshot; `END_SESSION` tears down and
+  returns the saved report; `BLOCKED_HIT` counts a blocked-site attempt.
 
 ## Tuning the gaze detector
 
-All thresholds live in `TUNING` at the top of [`lib/gaze.js`](lib/gaze.js). To tune against real
-numbers, start a session with the **gaze debug overlay** enabled (a checkbox in the popup, or
-add `?debug=1` to the session URL). The overlay shows live eye-drift, head yaw/pitch deviation,
-the combined drift score, and the calibrated baseline, plus a drift-score bar. Watch the numbers
-while you look around and adjust `EYE_DRIFT_DELTA`, `HEAD_YAW_DEG`, `HEAD_PITCH_DEG`, and the
-`ENTER_MS` / `EXIT_MS` hysteresis windows.
+All thresholds live in `TUNING` at the top of [`lib/gaze.js`](lib/gaze.js): `EYE_DRIFT_DELTA`,
+`HEAD_YAW_DEG`, `HEAD_PITCH_DEG`, the `ENTER_MS` / `EXIT_MS` hysteresis windows, and the
+`BLINK_SKIP` confidence gate. Drift is always measured relative to the personal baseline captured
+during calibration, so these are deltas, not absolutes.
+
+> Note: the old live debug overlay lived in the (now removed) full-screen session tab. With
+> detection moved to the invisible offscreen document there's no on-screen surface for it yet;
+> re-adding a live tuning panel to the floating window (fed by extra per-frame numbers from the
+> offscreen doc) is the natural next step.
 
 ## Notes for a future Web Store build
 
