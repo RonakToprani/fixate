@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Fixate — verified focus",
+  "version": "0.2.0",
+  "description": "Lock in for real. Fixate watches your gaze, blocks distractions, and gives you a verified record of the time you actually stayed focused.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Fixate",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "alarms"
+  ],
+  "host_permissions": ["*://*/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["blocked/blocked.html", "vendor/mediapipe/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

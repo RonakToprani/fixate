@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Fixate</title>
+  </head>
+  <body>
+    <header class="hdr">
+      <div class="brand">
+        <span class="logo">◉</span>
+        <span class="name">FIXATE</span>
+      </div>
+      <button id="historyBtn" class="ghost" title="History &amp; stats">stats</button>
+    </header>
+
+    <section class="portfolio" id="portfolio">
+      <div class="stat">
+        <div class="stat-num" id="pfVerified">—</div>
+        <div class="stat-lbl">verified</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="pfStreak">—</div>
+        <div class="stat-lbl">clean streak</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="pfBest">—</div>
+        <div class="stat-lbl">best focus</div>
+      </div>
+    </section>
+
+    <p class="insight" id="insight" hidden></p>
+
+    <section class="block">
+      <div class="row">
+        <label class="lbl">Session length</label>
+        <div class="dur">
+          <button class="dur-btn" data-min="15">15</button>
+          <button class="dur-btn" data-min="25">25</button>
+          <button class="dur-btn" data-min="50">50</button>
+          <input id="durCustom" type="number" min="1" max="240" placeholder="min" />
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="row between">
+        <label class="lbl">Block during session</label>
+        <span class="hint" id="blockCount"></span>
+      </div>
+      <ul class="sites" id="sites"></ul>
+      <form id="addForm" class="add">
+        <input id="addInput" type="text" placeholder="add a site (e.g. news.com)" />
+        <button type="submit" class="add-btn">+</button>
+      </form>
+    </section>
+
+    <section class="block settings">
+      <label class="toggle">
+        <input type="checkbox" id="setSound" />
+        <span>Sound cues</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="setHold" />
+        <span>Friction to quit early</span>
+      </label>
+      <div class="sub" id="cancelStyleRow">
+        <label class="mini">
+          <input type="radio" name="cancelStyle" value="hold" /> press &amp; hold
+        </label>
+        <label class="mini">
+          <input type="radio" name="cancelStyle" value="reason" /> type a reason
+        </label>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setDebug" />
+        <span>Gaze debug overlay</span>
+      </label>
+    </section>
+
+    <button id="startBtn" class="start">Start focus session</button>
+    <p class="foot">Fixate uses your camera locally to verify focus. Nothing leaves your machine.</p>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

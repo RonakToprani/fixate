@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="history.css" />
+    <title>Fixate — stats</title>
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand"><span class="logo">◉</span> FIXATE <span class="sub">verified history</span></div>
+      <div class="actions">
+        <button id="exportTxt" class="btn">Export stats (.txt)</button>
+        <button id="exportImg" class="btn">Export card (.png)</button>
+      </div>
+    </header>
+
+    <section class="cards" id="portfolio"></section>
+
+    <p class="insight" id="insight" hidden></p>
+
+    <h2>Sessions</h2>
+    <div class="table-wrap">
+      <table id="sessions">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Length</th>
+            <th>Focus</th>
+            <th>Drifts</th>
+            <th>Left Chrome</th>
+            <th>Blocked</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="empty" class="empty" hidden>No sessions yet. Run your first focus session to start building a record.</p>
+    </div>
+
+    <canvas id="exportCanvas" hidden></canvas>
+    <script type="module" src="history.js"></script>
+  </body>
+</html>
